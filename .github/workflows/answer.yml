@@ -5,7 +5,7 @@ on:
     # Every 10 minutes, offset from the top of the hour when GitHub's
     # scheduler is busiest. Rounds release on the hour; the grading window
     # for full credit is 3 hours.
-    - cron: "7-59/10 * * * *"
+    - cron: "7,17,27,37,47,57 * * * *"
   workflow_dispatch:
 
 permissions:
