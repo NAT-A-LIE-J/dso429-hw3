@@ -1,15 +1,23 @@
 name: Answer new rounds
 
+# One run at a time stays alive for just under 6 hours, checking for new
+# rounds every 5 minutes, then starts its own replacement. GitHub's cron
+# scheduler is unreliable on new repos, so it's only a backup here: it
+# restarts the chain if a run ever ends without handing off. To stop
+# everything, disable the workflow: gh workflow disable answer.yml
+
 on:
   schedule:
-    # Every 10 minutes, offset from the top of the hour when GitHub's
-    # scheduler is busiest. Rounds release on the hour; the grading window
-    # for full credit is 3 hours.
-    - cron: "7,17,27,37,47,57 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long this run keeps checking before handing off"
+        default: "340"
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: answer
@@ -18,7 +26,7 @@ concurrency:
 jobs:
   answer:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -29,25 +37,34 @@ jobs:
       - name: Install Anthropic SDK
         run: pip install --quiet "anthropic==1.6.0"
 
-      - name: Solve new rounds
+      - name: Answer new rounds every 5 minutes
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           QUIZ_MODEL: ${{ vars.QUIZ_MODEL }}
-        run: python solve.py
-
-      - name: Commit and push
+          MINUTES: ${{ inputs.minutes || '340' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
-          git add answers
-          [ -f pending.json ] && git add pending.json
-          if git diff --cached --quiet; then
-            echo "No new rounds."
-            exit 0
-          fi
-          git commit -m "Answer rounds $(git diff --cached --name-only -- answers | sed -E 's/.*round-0*([0-9]+).*/\1/' | paste -sd, -)"
-          for i in 1 2 3; do
-            git pull --rebase && git push && exit 0
-            sleep 10
+          stop=$(( $(date +%s) + MINUTES * 60 ))
+          while :; do
+            git pull --rebase --quiet || echo "::warning::git pull failed"
+            python solve.py || echo "::warning::solve.py failed; retrying next pass"
+            git add answers
+            [ -f pending.json ] && git add pending.json
+            if ! git diff --cached --quiet; then
+              git commit --quiet -m "Answer rounds $(git diff --cached --name-only -- answers | sed -E 's/.*round-0*([0-9]+).*/\1/' | paste -sd, -)"
+              for i in 1 2 3; do
+                git pull --rebase --quiet && git push --quiet && break
+                sleep 10
+              done
+            fi
+            [ "$(date +%s)" -ge "$stop" ] && break
+            sleep 300
           done
-          exit 1
+
+      # Skipped when a run is cancelled by hand, so cancelling stops the chain.
+      - name: Start the next run
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run answer.yml --ref main --repo "$GITHUB_REPOSITORY"

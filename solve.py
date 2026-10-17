@@ -32,7 +32,7 @@ PENDING = ROOT / "pending.json"
 LETTERS = "ABCD"
 NUM = r"\$?(-?[\d,]+(?:\.\d+)?)"
 
-MODEL = os.environ.get("QUIZ_MODEL") or "claude-opus-5-5"
+MODEL = os.environ.get("QUIZ_MODEL") or "claude-sonnet-5-5"
 # Answers stay editable for 3 hours after release; stop retrying a little
 # before that so the last retry's push lands inside the window.
 RETRY_WINDOW = timedelta(hours=2, minutes=45)
@@ -210,7 +210,7 @@ def ask_claude(client, rows, effort):
     }
     with client.beta.messages.stream(
         model=MODEL,
-        max_tokens=64000,
+        max_tokens=16000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         system=SYSTEM,
@@ -234,7 +234,7 @@ def answer_round(client, rows):
     if client:
         import anthropic
         try:
-            claude = ask_claude(client, rows, effort="medium")
+            claude = ask_claude(client, rows, effort="low")
         except (anthropic.AnthropicError, ValueError, StopIteration) as e:
             print(f"::warning::Claude failed on round {rows[0]['round_id']}: {e}")
 
@@ -244,7 +244,7 @@ def answer_round(client, rows):
     if disputed:
         import anthropic
         try:
-            second = ask_claude(client, disputed, effort="high")
+            second = ask_claude(client, disputed, effort="medium")
         except (anthropic.AnthropicError, ValueError, StopIteration) as e:
             print(f"::warning::Claude second look failed: {e}")
             second = {}
