@@ -213,7 +213,7 @@ def ask_claude(client, rows, effort):
     }
     with client.beta.messages.stream(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=32000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         system=SYSTEM,
@@ -237,7 +237,7 @@ def answer_round(client, rows):
     if client:
         import anthropic
         try:
-            claude = ask_claude(client, rows, effort="low")
+            claude = ask_claude(client, rows, effort="medium")
         except (anthropic.AnthropicError, ValueError, StopIteration) as e:
             print(f"::warning::Claude failed on round {rows[0]['round_id']}: {e}")
 
@@ -247,7 +247,7 @@ def answer_round(client, rows):
     if disputed:
         import anthropic
         try:
-            second = ask_claude(client, disputed, effort="medium")
+            second = ask_claude(client, disputed, effort="high")
         except (anthropic.AnthropicError, ValueError, StopIteration) as e:
             print(f"::warning::Claude second look failed: {e}")
             second = {}

@@ -9,8 +9,8 @@ A GitHub Actions workflow (`.github/workflows/answer.yml`) runs `solve.py` every
 For each round that doesn't have a file yet, `solve.py`:
 
 1. Pulls [`questions.csv`](https://github.com/FaisalXL/dso429-hourly-quiz/blob/main/questions.csv).
-2. Sends all 25 questions to Claude (`claude-sonnet-5-5`, low effort) in one request, with the answer constrained to a JSON object of `q1`–`q25` → `A`/`B`/`C`/`D`.
-3. Cross-checks against formula solvers for the 12 business-arithmetic question types seen in practice (1200/1200 on the practice keys). Any disagreement goes back to Claude at medium effort, and the workflow log shows a warning for each one.
+2. Sends all 25 questions to Claude (`claude-sonnet-5-5`, medium effort) in one request, with the answer constrained to a JSON object of `q1`–`q25` → `A`/`B`/`C`/`D`.
+3. Cross-checks against formula solvers for the 12 business-arithmetic question types seen in practice (1200/1200 on the practice keys). Any disagreement goes back to Claude at high effort, and the workflow log shows a warning for each one.
 4. If Claude can't be reached, still submits the round on time from the formulas, records it in `pending.json`, and retries it with Claude on later runs while answers are still editable (3 hours after release).
 
 ## Setup
