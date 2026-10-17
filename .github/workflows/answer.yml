@@ -1,0 +1,46 @@
+name: Answer new rounds
+
+on:
+  schedule:
+    # Every 10 minutes, offset from the top of the hour when GitHub's
+    # scheduler is busiest. Rounds release on the hour; the grading window
+    # for full credit is 3 hours.
+    - cron: "7-59/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: answer
+  cancel-in-progress: false
+
+jobs:
+  answer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Solve new rounds
+        run: python solve.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
+          git add answers
+          if git diff --cached --quiet; then
+            echo "No new rounds."
+            exit 0
+          fi
+          git commit -m "Answer rounds $(git diff --cached --name-only | sed -E 's/.*round-0*([0-9]+).*/\1/' | paste -sd, -)"
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 10
+          done
+          exit 1
