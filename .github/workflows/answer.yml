@@ -40,6 +40,7 @@ jobs:
       - name: Answer new rounds every 5 minutes
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           QUIZ_MODEL: ${{ vars.QUIZ_MODEL }}
           MINUTES: ${{ inputs.minutes || '340' }}
         run: |

@@ -21,6 +21,8 @@ The workflow reads an Anthropic API key from the repository secret `ANTHROPIC_AP
 gh secret set ANTHROPIC_API_KEY --repo NAT-A-LIE-J/dso429-hw3
 ```
 
+If the key isn't scoped to a workspace, also set the workspace ID (Console → Settings → Workspaces): `gh variable set ANTHROPIC_WORKSPACE_ID --body <id>`.
+
 To use a different model, set the repository variable `QUIZ_MODEL` (for example `gh variable set QUIZ_MODEL --body claude-opus-5-5`).
 
 ## Checking accuracy

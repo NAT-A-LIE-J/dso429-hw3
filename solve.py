@@ -191,7 +191,10 @@ def make_client():
         print("::warning::ANTHROPIC_API_KEY is not set; answering from formulas only")
         return None
     import anthropic
-    return anthropic.Anthropic(max_retries=4)
+    # Keys that aren't scoped to a workspace must name one on every request.
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+    headers = {"anthropic-workspace-id": workspace} if workspace else None
+    return anthropic.Anthropic(max_retries=4, default_headers=headers)
 
 
 def ask_claude(client, rows, effort):
