@@ -3,8 +3,12 @@ name: Answer new rounds
 # One run at a time stays alive for just under 6 hours, checking for new
 # rounds every 5 minutes, then starts its own replacement. GitHub's cron
 # scheduler is unreliable on new repos, so it's only a backup here: it
-# restarts the chain if a run ever ends without handing off. To stop
-# everything, disable the workflow: gh workflow disable answer.yml
+# restarts the chain if a run ever ends without handing off.
+#
+# Auto-stop: once the last round (168) is answered and it's past 3:00 PM
+# Pacific on Oct 22 (2 hours after round 168 is due out), the run stops
+# handing off and disables this workflow, which also stops the cron backup.
+# To stop by hand at any time: gh workflow disable answer.yml
 
 on:
   schedule:
@@ -14,6 +18,12 @@ on:
       minutes:
         description: "How long this run keeps checking before handing off"
         default: "340"
+      stop_at:
+        description: "Stop for good after this UTC time, once the last round is answered"
+        default: "2026-10-22T22:00:00Z"
+      last_round:
+        description: "Round that must be answered before stopping"
+        default: "168"
 
 permissions:
   contents: write
@@ -38,15 +48,20 @@ jobs:
         run: pip install --quiet "anthropic==1.6.0"
 
       - name: Answer new rounds every 5 minutes
+        id: answer
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           QUIZ_MODEL: ${{ vars.QUIZ_MODEL }}
           MINUTES: ${{ inputs.minutes || '340' }}
+          STOP_AT: ${{ inputs.stop_at || '2026-10-22T22:00:00Z' }}
+          LAST_ROUND: ${{ inputs.last_round || '168' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
           stop=$(( $(date +%s) + MINUTES * 60 ))
+          final=$(date -u -d "$STOP_AT" +%s)
+          last_file=$(printf "answers/round-%04d.json" "$LAST_ROUND")
           while :; do
             git pull --rebase --quiet || echo "::warning::git pull failed"
             python solve.py || echo "::warning::solve.py failed; retrying next pass"
@@ -59,13 +74,24 @@ jobs:
                 sleep 10
               done
             fi
+            if [ "$(date +%s)" -ge "$final" ] && [ -f "$last_file" ]; then
+              echo "Past $STOP_AT and $last_file exists: stopping for good."
+              echo "finished=true" >> "$GITHUB_OUTPUT"
+              break
+            fi
             [ "$(date +%s)" -ge "$stop" ] && break
             sleep 300
           done
 
       # Skipped when a run is cancelled by hand, so cancelling stops the chain.
       - name: Start the next run
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.answer.outputs.finished != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run answer.yml --ref main --repo "$GITHUB_REPOSITORY"
+
+      - name: Disable this workflow (homework is over)
+        if: ${{ steps.answer.outputs.finished == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable answer.yml --repo "$GITHUB_REPOSITORY"
