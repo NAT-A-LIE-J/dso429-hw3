@@ -1,8 +1,8 @@
 """Alert by GitHub issue when a released round still has no answer on main.
 
-Runs from the answer loop after every pass and from its own scheduled
+Runs from the answer loop after every pass and from its own self-restarting
 workflow (watchdog.yml), so it still fires if the answer runs are stuck or
-dead. For each round released more than 20 minutes ago whose file isn't on
+dead; the answer loop in turn restarts the watchdog chain if it stops. For each round released more than 20 minutes ago whose file isn't on
 origin/main, it opens an issue that @mentions the repo owner (GitHub emails
 mentions). If no answer run is in progress, it also starts one. Issues close
 themselves once the round is answered.
@@ -45,9 +45,19 @@ def open_alerts():
     return {i["title"]: i["number"] for i in json.loads(out or "[]")}
 
 
-def answer_run_active():
-    out = gh("run", "list", "--workflow", "answer.yml", "--status", "in_progress", "--limit", "1", "--json", "databaseId")
-    return bool(json.loads(out or "[]"))
+def chain_alive(workflow):
+    """True if a run of workflow is in progress, or was queued in the last
+    10 minutes. Older queued runs are treated as stuck (GitHub left one
+    queued for hours on Oct 19)."""
+    out = gh("run", "list", "--workflow", workflow, "--limit", "10", "--json", "status,createdAt")
+    now = datetime.now(timezone.utc)
+    for run in json.loads(out or "[]"):
+        if run["status"] == "in_progress":
+            return True
+        if run["status"] in ("queued", "pending", "waiting", "requested"):
+            if now - datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00")) < timedelta(minutes=10):
+                return True
+    return False
 
 
 def main():
@@ -55,6 +65,8 @@ def main():
     ap.add_argument("--pretend-missing", type=int, help="treat this round's file as missing (testing)")
     ap.add_argument("--pretend-idle", action="store_true", help="act as if no answer run is in progress (testing)")
     ap.add_argument("--dry-run", action="store_true", help="print actions instead of taking them")
+    ap.add_argument("--ensure-watchdog", action="store_true",
+                    help="restart the watchdog chain if it isn't running (used by the answer loop)")
     args = ap.parse_args()
 
     def act(*cmd):
@@ -97,7 +109,7 @@ def main():
 
     restarted = False
     if any(t.startswith("Round ") for t in problems):
-        if args.pretend_idle or not answer_run_active():
+        if args.pretend_idle or not chain_alive("answer.yml"):
             act("workflow", "run", "answer.yml", "--ref", "main")
             restarted = True
 
@@ -114,6 +126,10 @@ def main():
         if title not in problems:
             print("RESOLVED:", title)
             act("issue", "close", str(number), "--comment", f"Resolved; the watchdog saw it fixed at {now:%Y-%m-%d %H:%M} UTC.")
+
+    if args.ensure_watchdog and not chain_alive("watchdog.yml"):
+        print("watchdog chain isn't running; restarting it")
+        act("workflow", "run", "watchdog.yml", "--ref", "main")
 
     if not problems:
         print(f"watchdog: all released rounds answered ({now:%H:%M} UTC)")

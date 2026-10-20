@@ -1,16 +1,24 @@
 name: Watchdog
 
-# Independent of the answer runs, so it still fires if they're stuck or
-# dead: opens an issue (which emails the repo owner) when a released round
-# has no answer file 20 minutes after release, and starts an answer run if
-# none is in progress. Disables itself after the homework ends, like
-# answer.yml.
+# A second, independent chain of runs, built like answer.yml: each run
+# checks every 5 minutes for just under 6 hours, then starts its
+# replacement. Each check opens an issue (which emails the repo owner) when
+# a released round has no answer file 20 minutes after release, and starts
+# an answer run if none is alive. The answer loop restarts this chain if it
+# stops, so either chain can revive the other. GitHub's cron barely fires
+# on this repo, so the schedule below is only a last-resort restart.
+#
+# Stops itself with answer.yml: after 3 PM Pacific Oct 22, once round 168
+# is answered.
 
 on:
   schedule:
-    - cron: "3,13,23,33,43,53 * * * *"
+    - cron: "3,33 * * * *"
   workflow_dispatch:
     inputs:
+      minutes:
+        description: "How long this run keeps checking before handing off"
+        default: "340"
       pretend_missing:
         description: "Test: treat this round's answer file as missing"
         default: ""
@@ -27,7 +35,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -35,16 +43,35 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check every released round has an answer
+      - name: Check every released round has an answer, every 5 minutes
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          MINUTES: ${{ inputs.minutes || '340' }}
           PRETEND: ${{ inputs.pretend_missing }}
-        run: python tools/watchdog.py ${PRETEND:+--pretend-missing "$PRETEND"}
+        run: |
+          stop=$(( $(date +%s) + MINUTES * 60 ))
+          final=$(date -u -d 2026-10-22T22:00:00Z +%s)
+          while :; do
+            git pull --quiet || echo "::warning::git pull failed"
+            python tools/watchdog.py ${PRETEND:+--pretend-missing "$PRETEND"} || echo "::warning::watchdog failed"
+            if [ "$(date +%s)" -ge "$final" ] && [ -f answers/round-0168.json ]; then
+              echo "finished=true" >> "$GITHUB_OUTPUT"
+              break
+            fi
+            [ "$(date +%s)" -ge "$stop" ] && break
+            sleep 300
+          done
 
-      - name: Disable this workflow once the homework is over
+      # Skipped when a run is cancelled by hand, so cancelling stops the chain.
+      - name: Start the next run
+        if: ${{ !cancelled() && steps.check.outputs.finished != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$(date +%s)" -ge "$(date -u -d 2026-10-22T22:00:00Z +%s)" ] && [ -f answers/round-0168.json ]; then
-            gh workflow disable watchdog.yml --repo "$GITHUB_REPOSITORY"
-          fi
+        run: gh workflow run watchdog.yml --ref main --repo "$GITHUB_REPOSITORY"
+
+      - name: Disable this workflow (homework is over)
+        if: ${{ steps.check.outputs.finished == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable watchdog.yml --repo "$GITHUB_REPOSITORY"

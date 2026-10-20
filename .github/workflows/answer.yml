@@ -76,7 +76,7 @@ jobs:
                 sleep 10
               done
             fi
-            python tools/watchdog.py || echo "::warning::watchdog failed"
+            python tools/watchdog.py --ensure-watchdog || echo "::warning::watchdog failed"
             if [ "$(date +%s)" -ge "$final" ] && [ -f "$last_file" ]; then
               echo "Past $STOP_AT and $last_file exists: stopping for good."
               echo "finished=true" >> "$GITHUB_OUTPUT"
