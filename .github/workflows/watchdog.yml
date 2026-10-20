@@ -1,0 +1,50 @@
+name: Watchdog
+
+# Independent of the answer runs, so it still fires if they're stuck or
+# dead: opens an issue (which emails the repo owner) when a released round
+# has no answer file 20 minutes after release, and starts an answer run if
+# none is in progress. Disables itself after the homework ends, like
+# answer.yml.
+
+on:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+    inputs:
+      pretend_missing:
+        description: "Test: treat this round's answer file as missing"
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check every released round has an answer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRETEND: ${{ inputs.pretend_missing }}
+        run: python tools/watchdog.py ${PRETEND:+--pretend-missing "$PRETEND"}
+
+      - name: Disable this workflow once the homework is over
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date +%s)" -ge "$(date -u -d 2026-10-22T22:00:00Z +%s)" ] && [ -f answers/round-0168.json ]; then
+            gh workflow disable watchdog.yml --repo "$GITHUB_REPOSITORY"
+          fi

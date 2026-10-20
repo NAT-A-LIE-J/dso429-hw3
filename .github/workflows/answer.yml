@@ -28,6 +28,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write
 
 concurrency:
   group: answer
@@ -56,6 +57,7 @@ jobs:
           MINUTES: ${{ inputs.minutes || '340' }}
           STOP_AT: ${{ inputs.stop_at || '2026-10-22T22:00:00Z' }}
           LAST_ROUND: ${{ inputs.last_round || '168' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
@@ -74,6 +76,7 @@ jobs:
                 sleep 10
               done
             fi
+            python tools/watchdog.py || echo "::warning::watchdog failed"
             if [ "$(date +%s)" -ge "$final" ] && [ -f "$last_file" ]; then
               echo "Past $STOP_AT and $last_file exists: stopping for good."
               echo "finished=true" >> "$GITHUB_OUTPUT"
